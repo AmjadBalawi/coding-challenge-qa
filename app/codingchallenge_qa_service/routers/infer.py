@@ -1,20 +1,15 @@
-import asyncio
 from enum import Enum
-from codingchallenge_qa_service.logging import getLogger
 from typing import Any, Dict, Optional, Union
 from uuid import uuid4
-
 from fastapi import APIRouter, BackgroundTasks, Request, Response, HTTPException
-
-from codingchallenge_qa_service.models.paraphrase_models import ParaphraseServiceRequest, ParaphraseServiceResponse
-from codingchallenge_qa_service.models.qa_models import Language
+from codingchallenge_qa_service.logging import getLogger
+from codingchallenge_qa_service.measure import Clock, Measure
 from codingchallenge_qa_service.models.infer_request import InferRequest
 from codingchallenge_qa_service.models.infer_response import InferResponse
-from codingchallenge_qa_service.measure import Clock, Measure
+from codingchallenge_qa_service.models.paraphrase_models import ParaphraseServiceRequest, ParaphraseServiceResponse
+from codingchallenge_qa_service.models.qa_models import Language
 
 logger = getLogger(name=__name__)
-
-
 router = APIRouter()
 
 
@@ -29,22 +24,15 @@ class ResponseType(str, Enum):
 
 def _check_answer_validity(answer: str, language: Language) -> bool:
     unknown_response = ["unknown", "unknown."] if language == Language.EN else ["unbekannt", "unbekannt."]
-    if answer is None or answer == "":
-        return False
-    elif answer.lower() in unknown_response:
-        return False
-    return True
+    return bool(answer and answer.lower() not in unknown_response)
 
 
 def _clean_question(question: str) -> str:
-    # preprocess query (remove extra whitespaces)
-    cleaned_question = question.strip()
-    return cleaned_question
+    return question.strip()
 
 
 def _clean_answer(answer: str) -> str:
-    cleaned_answer = answer.strip()
-    return cleaned_answer
+    return answer.strip()
 
 
 async def _run_sensitive_content_detection(request, query: str, user_id: str) -> Dict[str, str]:
@@ -59,7 +47,7 @@ async def _run_sensitive_content_detection(request, query: str, user_id: str) ->
     return scd_response
 
 
-async def _question_has_sensitive_content(request: Request, user_id: str, question: str) -> bool:
+async def _has_sensitive_content_in_question(request: Request, user_id: str, question: str) -> bool:
     time_sensitive_content_detection: Clock = Measure.start_clock()
     scd_response = await _run_sensitive_content_detection(request, question, user_id)
     request.state.transaction.record(
@@ -82,7 +70,7 @@ async def _question_has_sensitive_content(request: Request, user_id: str, questi
     return scd_response["sensitivity"] != "SAFE"
 
 
-async def _answer_has_sensitive_content(request: Request, user_id: str, answer: str) -> bool:
+async def _has_sensitive_content_in_answer(request: Request, user_id: str, answer: str) -> bool:
     time_sensitive_content_detection: Clock = Measure.start_clock()
     scd_response = await _run_sensitive_content_detection(request, answer, user_id)
     request.state.transaction.record(
@@ -106,7 +94,7 @@ async def _answer_has_sensitive_content(request: Request, user_id: str, answer: 
 
 async def _get_prefiltered_documents_from_elasticsearch(
     request: Request, course_id: str, question: str, language: Language
-) -> Dict:
+) -> Optional[Dict]:
     time_preselection: Clock = Measure.start_clock()
     try:
         prefiltered_doc = await request.app.state.services.prefiltering_service.run(
@@ -140,7 +128,6 @@ async def _get_answer_from_paraphrase(
     request: Request, course_id: str, cleaned_question: str
 ) -> Optional[ParaphraseServiceResponse]:
     time_paraphrase: Clock = Measure.start_clock()
-    answer_from_paraphrase = None
     try:
         answer_from_paraphrase = await request.app.state.services.paraphrase_service.find_paraphrase(
             ParaphraseServiceRequest(
@@ -151,6 +138,8 @@ async def _get_answer_from_paraphrase(
     except Exception as e:
         logger.error("Failed to connect to the paraphrase service.", exc_info=e)
         request.state.transaction.record({"error": "Exception in Paraphrasing.", "exc_info": e})
+        return None
+
     if answer_from_paraphrase:
         logger.info("Gold Standard answer retrieved from Paraphrase service.")
         request.state.transaction.record(
@@ -222,14 +211,11 @@ async def infer(
         }
     )
 
-    has_sensitive_content, paraphrase = await asyncio.gather(
-        _question_has_sensitive_content(request, request_body.user.id, cleaned_question),
-        _get_answer_from_paraphrase(request, request_body.course_id, cleaned_question),
-    )
-
+    has_sensitive_content = await _has_sensitive_content_in_question(request, request_body.user.id, cleaned_question)
     if has_sensitive_content:
         return Response(status_code=400)
 
+    paraphrase = await _get_answer_from_paraphrase(request, request_body.course_id, cleaned_question)
     if paraphrase:
         return InferResponse(
             answer=paraphrase.gs_answer_content_str,
@@ -259,14 +245,15 @@ async def infer(
     if not _check_answer_validity(cleaned_answer, request_body.language):
         return Response(status_code=404)
 
-    if await _answer_has_sensitive_content(request, request_body.user.id, cleaned_answer):
+    has_sensitive_content = await _has_sensitive_content_in_answer(request, request_body.user.id, cleaned_answer)
+    if has_sensitive_content:
         return Response(status_code=400)
 
     return InferResponse(
-            answer=cleaned_answer,
-            question=cleaned_question,
-            answer_validity="valid",
-            transaction_id=request.state.transaction.transaction_id,
-            is_gs_answer=False,
-            question_uuid=question_uuid,
-        )
+        answer=cleaned_answer,
+        question=cleaned_question,
+        answer_validity="valid",
+        transaction_id=request.state.transaction.transaction_id,
+        is_gs_answer=False,
+        question_uuid=question_uuid,
+    )

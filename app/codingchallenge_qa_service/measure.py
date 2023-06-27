@@ -1,18 +1,18 @@
-import time
 from datetime import datetime, timezone
+from time import perf_counter
 
 
 class Clock:
     def __init__(self):
-        self.start_time: float = None
-        self.stop_time: float = None
+        self.start_time = None
+        self.stop_time = None
 
     def start(self):
         self.reset()
-        self.start_time = time.time()
+        self.start_time = perf_counter()
 
     def stop(self) -> float:
-        self.stop_time = time.time()
+        self.stop_time = perf_counter()
         return self.get_elapsed_time()
 
     def get_elapsed_time(self) -> float:
@@ -26,12 +26,16 @@ class Clock:
 
 
 class Measure:
-    @classmethod
-    def start_clock(cls) -> Clock:
-        m = Clock()
-        m.start()
-        return m
+    @staticmethod
+    def start_clock() -> Clock:
+        clock = Clock()
+        clock.start()
+        return clock
+
+    @staticmethod
+    def stop_clock(clock: Clock) -> float:
+        return clock.stop()
 
     @staticmethod
     def current_time():
-        return datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f+00:00")
+        return datetime.now(timezone.utc).isoformat(timespec='microseconds')

@@ -1,10 +1,8 @@
-from codingchallenge_qa_service.logging import getLogger
+from ..logging import getLogger
 from typing import Optional
 from uuid import uuid4
 from random import randint
-
 from codingchallenge_qa_service.models.paraphrase_models import ParaphraseServiceRequest, ParaphraseServiceResponse
-
 logger = getLogger(name=__name__)
 
 
@@ -12,11 +10,18 @@ class ParaphraseService:
     async def find_paraphrase(
         self, request_body: ParaphraseServiceRequest
     ) -> Optional[ParaphraseServiceResponse]:
-
-        if randint(0, 1) == 0:
+        if self.should_find_paraphrase():
+            return self.generate_paraphrase_response()
+        else:
             logger.info("No paraphrase found")
             return None
 
+    @staticmethod
+    def should_find_paraphrase() -> bool:
+        return randint(0, 1) == 0
+
+    @staticmethod
+    def generate_paraphrase_response() -> ParaphraseServiceResponse:
         return ParaphraseServiceResponse(
             question_origin_uuid=uuid4(),
             question_origin_content_str="Et harum quidem rerum facilis est et expedita distinctio",

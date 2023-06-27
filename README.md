@@ -33,7 +33,7 @@ In the second interview, we would be happy to talk about your solution: You will
 
 * duration: 2-4 hours
 * provided: repository with a working python/fastapi application
-* solution: please fork this repo and prepare a PR
+* solution: please submit as a PR in a `feature/*` branch to this repo
 
 ### the repository
 
@@ -94,3 +94,13 @@ If you could adjust this service to your vision, how would you restructure and r
 ### via uvicorn
 
 `uvicorn codingchallenge_qa_service.app:create_app --reload --factory`
+
+### build the image using docker
+`docker build -t my-fastapi-app .`
+
+`docker run -d -p 8000:8000 my-fastapi-app`
+
+### run the tests within the container and provide the test results.
+`docker build -t mytestimage -f Dockerfile.test .`
+
+`docker run --rm mytestimage`

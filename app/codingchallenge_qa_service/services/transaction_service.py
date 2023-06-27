@@ -1,8 +1,5 @@
 from codingchallenge_qa_service.logging import getLogger
-
 from codingchallenge_qa_service.transaction import Transaction
-
-
 logger = getLogger(__name__)
 
 
@@ -13,17 +10,18 @@ class TransactionService:
     Methods
     -------
     create(transaction: Transaction)
-    Stores a transaction
+        Stores a transaction
     update(transaction: Transaction)
-    Updates a transaction
+        Updates a transaction
     """
 
-    def create(self, transaction: Transaction):
-        logger.debug(f"CREATE transaction: '{transaction.transaction_id}'", extra={
+    def log_transaction(self, transaction: Transaction, action: str):
+        logger.debug(f"{action.upper()} transaction: '{transaction.transaction_id}'", extra={
             "transaction_data": transaction.to_dict(include_id=False)
         })
 
+    def create(self, transaction: Transaction):
+        self.log_transaction(transaction, "create")
+
     def update(self, transaction: Transaction):
-        logger.debug(f"UPDATE transaction: '{transaction.transaction_id}'", extra={
-            "transaction_data": transaction.to_dict(include_id=False)
-        })
+        self.log_transaction(transaction, "update")

@@ -1,69 +1,32 @@
 import json
-from codingchallenge_qa_service.logging import getLogger
-from typing import Any, Dict
+from pathlib import Path
+from logging import getLogger
+from typing import Any
 from uuid import uuid4
-
+from typing import Dict, Optional
 from fastapi.encoders import jsonable_encoder
+from codingchallenge_qa_service.measure import Clock
+from contextlib import contextmanager
 
 logger = getLogger(name=__name__)
 
 
 class Transaction:
-    MAPPING = {
-        "mappings": {
-            "properties": {
-                "request_time": {"type": "date"},
-                "question": {"type": "text"},
-                "query_channel": {"type": "keyword"},
-                "query_channel_data": {"type": "text"},
-                "student_id": {"type": "keyword"},
-                "coursebook_id": {"type": "keyword"},
-                "use_fallback": {"type": "boolean"},
-                "is_fallback": {"type": "boolean"},
-                "is_gs": {"type": "boolean"},
-                "score_threshold": {"type": "float"},
-                "answer": {"type": "text"},
-                "score": {"type": "float"},
-                "codingchallenge_qa_service_release_version": {"type": "keyword"},
-                "model_approach": {"type": "keyword"},
-                "model_name": {"type": "keyword"},
-                "request_body": {"type": "text"},
-                "response_body": {"type": "text"},
-                "pipeline_steps": {"type": "text"},
-                "error": {"type": "text"},
-                "exc_info": {"type": "text"},
-                "duration_request_total": {"type": "float"},
-                "duration_preselection": {"type": "float"},
-                "duration_paraphrase": {"type": "float"},
-                "duration_qa": {"type": "float"},
-                "duration_question_sensitive_content_detection": {"type": "float"},
-                "duration_answer_sensitive_content_detection": {"type": "float"},
-                "feedback": {"type": "object"},
-                "thread_id": {"type": "keyword"},
-                "validation": {"type": "object"},
-                "transaction_id": {"type": "keyword"},
-                "correlation_id": {"type": "keyword"},
-                "question_sensitivity": {"type": "keyword"},
-                "answer_sensitivity": {"type": "keyword"},
-                "client": {"type": "object"},
-                "course_id": {"type": "keyword"},
-                "user": {"type": "object"},
-                "question_uuid": {"type": "keyword"},
-                "answer_validity": {"type": "keyword"},
-                "is_gs_answer": {"type": "boolean"},
-                "response_type": {"type": "keyword"},
-                "language": {"type": "keyword"},
-                "allow_annotation": {"type": "boolean"},
-            }
-        }
-    }
 
     def __init__(self):
         self.transaction_id: str = str(uuid4())
         self.transaction_data = {}
         self.should_store = False
         self.should_update = False
+        self.time_request: Optional[Clock] = None  # Add the time_request attribute
+        # Load mapping from a JSON file
+        current_file_path = Path(__file__).resolve()
+        parent_directory = current_file_path.parent
+        mapping_file_path = parent_directory / "config" / "transaction_mapping.json"
+        with open(mapping_file_path, "r") as file:
+            self.MAPPING = json.load(file)
 
+    @contextmanager
     def record(self, field_update: Dict):
         """Updates the transaction nested dictionary on the first two levels.
         * If the Value is a dictionary, it doesn't replace Level 2 dictionary.
@@ -90,6 +53,15 @@ class Transaction:
             else:
                 # replace old value of the key or create a new key-value pair in the transaction
                 self.transaction_data[key] = value
+
+        yield self
+
+    def record_exception(self, exception: Exception):
+        """Records the exception in the transaction.
+
+        :param exception: Exception to be recorded
+        """
+        self.record({"exception": str(exception)})
 
     def to_dict(self, include_id: bool = True) -> Dict:
         """Transforming all second level dictionaries to json formatted text
